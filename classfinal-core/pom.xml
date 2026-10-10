@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>net.roseboy</groupId>
+        <artifactId>classfinal</artifactId>
+        <version>1.2.1</version>
+    </parent>
+
+    <artifactId>classfinal-core</artifactId>
+    <packaging>jar</packaging>
+
+    <name>classfinal-core</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.javassist</groupId>
+            <artifactId>javassist</artifactId>
+            <!-- 原版为 3.25.0-GA，无法处理 JDK 17 的 class file 61（60/61），
+                 升级到 3.30.2-GA。这是适配 JDK 17 的前提之一。 -->
+            <version>3.30.2-GA</version>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <!-- 用于生成"方法体整体替换"的桩类（见 ClassStubber）。
+                 javassist 的 insert+rebuildStackMapIf6 在 JDK 17 上会产出
+                 不一致的栈映射帧，必须绕开。 -->
+            <version>9.7.1</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+
+        </plugins>
+    </build>
+</project>

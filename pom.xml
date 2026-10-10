@@ -1,0 +1,86 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>net.roseboy</groupId>
+    <artifactId>classfinal</artifactId>
+    <version>1.2.1</version>
+    <packaging>pom</packaging>
+
+    <!--
+        JDK 17 适配版（基于 gitee.com/roseboy/classfinal 1.2.1）。
+
+        相对原版的改动：
+          1. 去掉 sonatype oss-parent 与 nexus-staging-maven-plugin（发布用，与本工具无关，
+             且该插件在当前环境无法解析）。
+          2. javassist 3.25.0-GA -> 3.30.2-GA：原版 javassist 读不了 JDK 17 的 class file 61。
+          3. 固定所有构建插件版本，避免解析到远古默认版本（离线/弱网环境必需）。
+          4. classfinal-maven-plugin 暂不参与构建（依赖 maven-plugin-plugin，本机未缓存），
+             先用 classfinal-fatjar 的命令行方式驱动加密。
+    -->
+    <modules>
+        <module>classfinal-core</module><!--主要代码在这里-->
+        <module>classfinal-fatjar</module><!--单独运行的jar、javaagent-->
+    </modules>
+
+    <name>ClassFinal</name>
+    <description>java class文件加密</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <java.version>1.8</java.version>
+    </properties>
+
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <scm>
+        <url>https://github.com/wenzhouzhao/ClassFinal.git</url>
+        <connection>scm:git:https://github.com/wenzhouzhao/ClassFinal.git</connection>
+        <developerConnection>scm:git:https://github.com/wenzhouzhao/ClassFinal.git</developerConnection>
+    </scm>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>3.4.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.3</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.6.0</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
