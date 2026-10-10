@@ -64,7 +64,8 @@ BeanNotOfRequiredTypeException: Bean named 'taskScheduler' is expected to be of 
 | 4 | `JarEncryptor.clearClassMethod` 失败即中止构建 | 原版吞异常并继续，导致「报告加密 N 个、实际改 M 个」 |
 | 5 | `JarUtils.getRootPath` 兼容 `nested:` 协议 | 修复运行时解密全部失效 |
 | 6 | 固定构建插件版本 | 弱网/离线环境必需 |
-| 7 | `classfinal-maven-plugin` 暂不参与构建 | 依赖 `maven-plugin-plugin`，先用 `classfinal-fatjar` 命令行驱动 |
+| 7 | 构建改用 `maven.compiler.release=8` | 原用 `source/target 1.8`，会按现代 JDK 的 API 签名编译，字节码里引用了 Java 9+ 才有的 `ByteBuffer.flip()` 协变返回，在 JDK 8 上抛 `NoSuchMethodError` |
+| 8 | `classfinal-maven-plugin` 暂不参与构建 | 依赖 `maven-plugin-plugin`，先用 `classfinal-fatjar` 命令行驱动 |
 
 ### 核心修复：方法体「整体替换」而不是「插入」
 
@@ -185,9 +186,10 @@ java -javaagent:app-encrypted.jar=-pwd '<密码>' -jar app-encrypted.jar
 | **JDK 17 + Spring Boot 3.5.5 + 多模块（12 模块）** | 实测通过 | 1509/1509 = 100%；全栈 E2E 容器 healthy |
 | **单模块**（业务类在 `BOOT-INF/classes`） | 实测通过 | 32/32 = 100%；加解密往返字节一致 |
 | **JDK 8 / 11 / 17 字节码**（major 52/55/61） | 实测通过 | 桩类均通过校验器并能正常加载 |
-| JDK 21~24 字节码（major 65~68） | 版本门通过 | ASM 接受；未在真实 JDK 21+ 工程上跑过 |
+| **JDK 21 字节码**（major 65） | 实测通过 | `classfinal-demo/jdk21-boot3` 加密运行正常 |
+| JDK 22~24 字节码（major 66~68） | 版本门通过 | ASM 接受；未在真实工程上跑过 |
 | JDK 25+（major ≥ 69） | 不支持 | ASM 9.7.1 报 `Unsupported class file major version`；需升 ASM |
-| **agent 运行在 JDK 8 上** | 编译期已证明 | `javac --release 8` 全量通过（代码无 Java 9+ API） |
+| **agent 运行在 JDK 8 上** | 实测通过 | `classfinal-demo/jdk8-boot2`：agent 在 JDK 8 上加载并解密成功 |
 | **Spring Boot ≤ 3.1 / 1.x 的 URL 形式** | 单元测试通过 | `getRootPath("jar:file:/opt/app.jar!/...")` → `/opt/app.jar` |
 | war（`java -jar` / Tomcat 部署） | 未实测 | 路径解析已修正，整体流程未跑过 |
 | `cfgfiles`（加密配置文件） | 不支持 | 靠**硬编码行号**往 Spring 的 `ClassPathResource` 里插代码，与 Spring 版本强耦合 |
@@ -223,6 +225,65 @@ java -javaagent:app-encrypted.jar=-pwd '<密码>' -jar app-encrypted.jar
    不使用该特性；原版那套「改写 Spring `ClassPathResource` 注入解密」在 Spring 6 上风险较高。
 5. **WAR 部署未验证**：仅验证了 Spring Boot fat jar。
 6. **`-debug` 在 `Main` 里原本不生效**（上游 bug），调试请用 `-javaagent` 侧的 `-debug`。
+
+---
+
+## 八、打包形态兼容性：fat jar 与 thin jar
+
+### 结论：thin 包同样支持
+
+运行时解密靠 `AgentTransformer`：对每个被加载的类取 `CodeSource.getLocation()`，
+用 `JarUtils.getRootPath()` 解析出「根 jar」，再从**那个 jar** 的
+`META-INF/.classes/<类名>` 解密。因此：
+
+- **app 自身类**（`BOOT-INF/classes`）→ 根 = 主 jar；
+- **外置依赖类**（thin 包里的 `lib/x.jar`）→ 根 = 该外置 jar。
+
+两种形态天然都支持。实测（Spring Boot 3.5.5 / JDK 21，thin 包用 `layout=ZIP`
+即 `PropertiesLauncher`，配合 `-Dloader.path`）：
+
+| 场景 | 结果 |
+|---|---|
+| 单模块 fat jar | 通过 |
+| 多模块 fat jar（`-libjars` 加密包内依赖） | 通过 |
+| 单模块 thin jar | 通过 |
+| 多模块 thin jar（app + 外置 lib 均加密） | 通过 |
+| 反向：不挂 `-javaagent` | 无输出（`main` 是空壳桩，Spring 根本没启动）→ 证明加密真实生效 |
+| 反向：错误密码 | `ERROR: Startup failed, invalid password.` 退出 |
+| 字节码对比 | 加密包 `add()` = `iconst_0; ireturn`（空壳）；明文 = 真实 `iadd/imul` |
+
+### thin 包怎么加密
+
+thin 包把依赖外置到 `lib/`，而 `-libjars` 只处理包**内部**的 `BOOT-INF/lib`、`WEB-INF/lib`，
+对 thin 包这两个目录是空的 —— 所以外置依赖**必须逐个 jar 单独加密**，再用同一密码启动：
+
+```bash
+# 1) 加密主 jar（app 自身类）
+java -jar classfinal-fatjar.jar -file thin-app.jar -packages com.example.app -pwd 123456 -Y
+
+# 2) 逐个加密外置依赖，替换回 lib/
+for j in lib/*.jar; do
+  java -jar classfinal-fatjar.jar -file "$j" -packages com.example.lib -pwd 123456 -Y
+  mv "${j%.jar}-encrypted.jar" "$j"
+done
+
+# 3) 启动（同一密码 + -Dloader.path 指向 lib/）
+java -javaagent:thin-app-encrypted.jar=-pwd 123456 \
+     -Dloader.path=lib -jar thin-app-encrypted.jar
+```
+
+### 注意事项
+
+1. 外置依赖需**逐个**加密并替换，不是一条命令完成 —— 这是 thin 包与 fat 包最大的操作差别。
+2. 单独加密一个外置 jar 时，classfinal 会往它的 manifest 写入 `Premain-Class`，
+   并注入 `net/roseboy/*` 的 agent 类。功能无影响，但该 jar 会带上这些额外内容。
+3. `-Dloader.path` 仅在 `layout=ZIP`（`PropertiesLauncher`）下生效；用默认 `JarLauncher`
+   时外置依赖不会被加载 —— 这是 Spring Boot 的约束，与本工具无关。
+4. 密码 hash 从**主 jar** 读取，故主 jar 必须加密且带 agent；外置 jar 只承载自己的加密类。
+
+`classfinal-demo/` 目录下有四种打包形态的可运行示例（fat/thin × 单/多模块）、几个
+JDK / Spring Boot 版本组合（JDK 8+Boot 2.6.3、JDK 17/21+Boot 3.5.5），以及一键验证脚本
+（`classfinal-demo/run-all.sh`）。
 
 ---
 
